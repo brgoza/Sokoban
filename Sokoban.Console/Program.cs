@@ -1,311 +1,142 @@
 ﻿using System;
-using System.Collections.Generic;
-using System.IO;
-using System.Linq;
+using System.Data;
+using System.Diagnostics;
+using System.Diagnostics.Eventing.Reader;
+using System.Media;
+using System.Runtime.CompilerServices;
+using System.Security;
+using System.Security.Cryptography.X509Certificates;
+using System.Threading.Tasks;
+using System.Xml.Schema;
+using static Sokoban.Console.Map;
 
 namespace Sokoban.Console
 {
     internal class Program
     {
-        public static bool RequiresRedraw = true;
-        public static int YSize = 5;
-        public static int XSize = 6;
-        public static char[,] Map =
-        {
-            {'#', '#', '#', '#', '#', '#'},
-            {'#', ' ', ' ', ' ', ' ', '#'},
-            {'#', ' ', '.', 'o', ' ', '#'},
-            {'#', ' ', ' ', ' ', '@', '#'},
-            {'#', '#', '#', '#', '#', '#'}
-        };
+        
+        public static Map ThisMap { get; set; }
 
-        private static bool CheckForWin()
+        public enum Directions
         {
-            for (var i = 0; i < YSize; i++)
+            Up,
+            Down,
+            Left,
+            Right,
+        }
+
+        public static void Main(string[] args)
+        {
+            GameStart:
+            ThisMap = new Map(@"C:\Users\brgoz\Documents\GitHub\Sokoban\Sokoban.Console\maps\map1");
+          
+            while (!ThisMap.IsWon)
             {
-                for (var j = 0; j < XSize; j++)
+                System.Console.Clear();
+                System.Console.WriteLine("{0},{1}", ThisMap.PlayerTile.X, ThisMap.PlayerTile.Y);
+                System.Console.Write(ThisMap.Render());
+                var key = System.Console.ReadKey();
+
+                switch (key.Key)
                 {
-                    if (Map[i, j] == 'o')
-                        return false;
+                    case ConsoleKey.LeftArrow:
+                        if (!Move(Directions.Left))
+                            System.Console.Beep();
+                        break;
+                    case ConsoleKey.UpArrow:
+                        if (!Move(Directions.Up))
+                            System.Console.Beep();
+                        break;
+                    case ConsoleKey.RightArrow:
+                        if (!Move(Directions.Right))
+                            System.Console.Beep();
+                        break;
+                    case ConsoleKey.DownArrow:
+                        if (!Move(Directions.Down))
+                            System.Console.Beep();
+                        break;
                 }
             }
+            System.Console.WriteLine("YOU WIN!!!!! Play again (y/n)?");
+            if (System.Console.ReadKey().Key == System.ConsoleKey.Y) goto GameStart;
+        }
 
+        private static bool Move(Directions dir)
+        {
+
+            Tile sourceTile = ThisMap.PlayerTile;
+            Tile targetTile = GetTargetTile(sourceTile, dir);
+
+            if (targetTile.TileChar == Tile.TileTypes["Wall"]) return false;
+
+            if (targetTile.TileChar == Tile.TileTypes["Barrel"] || targetTile.TileChar == Tile.TileTypes["Barrel+Storage"])
+            {
+                var barrelTargetTile = GetTargetTile(targetTile, dir);
+                if (barrelTargetTile.TileChar == Tile.TileTypes["Wall"] || barrelTargetTile.TileChar == Tile.TileTypes["Barrel"] || barrelTargetTile.TileChar == Tile.TileTypes["Barrel+Storage"]) return false;
+                if (sourceTile.TileChar == Tile.TileTypes["Player"])
+                {
+                    sourceTile.TileChar = Tile.TileTypes["Empty"];
+                }
+                else if (sourceTile.TileChar == Tile.TileTypes["Player+Storage"])
+                {
+                    sourceTile.TileChar = Tile.TileTypes["Storage"];
+                }
+                if (targetTile.TileChar == Tile.TileTypes["Barrel"])
+                {
+                    targetTile.TileChar = Tile.TileTypes["Player"];
+                }
+                if (targetTile.TileChar == Tile.TileTypes["Barrel+Storage"])
+                {
+                    targetTile.TileChar = Tile.TileTypes["Player+Storage"];
+                }
+                if (barrelTargetTile.TileChar == Tile.TileTypes["Empty"])
+                {
+                    barrelTargetTile.TileChar = Tile.TileTypes["Barrel"];
+                }
+                if (barrelTargetTile.TileChar == Tile.TileTypes["Storage"])
+                {
+                    barrelTargetTile.TileChar = Tile.TileTypes["Barrel+Storage"];
+                }
+
+                ThisMap.GetTileAtPosition(barrelTargetTile.X, barrelTargetTile.Y).TileChar = barrelTargetTile.TileChar;
+            }
+
+
+            if (sourceTile.TileChar == Tile.TileTypes["Player"])
+            {
+                sourceTile.TileChar = Tile.TileTypes["Empty"];
+                targetTile.TileChar = targetTile.TileChar == Tile.TileTypes["Storage"]
+                    ? Tile.TileTypes["Player+Storage"]
+                    : Tile.TileTypes["Player"];
+            }
+
+            else if (sourceTile.TileChar == Tile.TileTypes["Player+Storage"])
+            {
+                sourceTile.TileChar = Tile.TileTypes["Storage"];
+                targetTile.TileChar = targetTile.TileChar == Tile.TileTypes["Storage"]
+                    ? Tile.TileTypes["Player+Storage"]
+                    : Tile.TileTypes["Player"];
+            }
+
+            ThisMap.GetTileAtPosition(sourceTile.X, sourceTile.Y).TileChar = sourceTile.TileChar;
+            ThisMap.GetTileAtPosition(targetTile.X, targetTile.Y).TileChar = targetTile.TileChar;
             return true;
         }
 
-        private static void RenderWorld()
+        public static Tile GetTargetTile(Tile currentTile, Directions dir)
         {
-            if (RequiresRedraw == false)
+            switch (dir)
             {
-                return;
+                case Directions.Left:
+                    return ThisMap.GetTileAtPosition(currentTile.X - 1, currentTile.Y);
+                case Directions.Right:
+                    return ThisMap.GetTileAtPosition(currentTile.X + 1, currentTile.Y);
+                case Directions.Down:
+                    return ThisMap.GetTileAtPosition(currentTile.X, currentTile.Y + 1);
+                case Directions.Up:
+                    return ThisMap.GetTileAtPosition(currentTile.X, currentTile.Y - 1);
             }
-
-            System.Console.Clear();
-            for (var i = 0; i < YSize; i++)
-            {
-                for (var j = 0; j < XSize; j++)
-                {
-                    switch (Map[i, j])
-                    {
-                        case '#':
-                            System.Console.Write('▓');
-                            break;
-                        case ' ':
-                            System.Console.Write(' ');
-                            break;
-                        case '@':
-                            System.Console.Write('☺');
-                            break;
-                        case 'o':
-                            System.Console.Write('o');
-                            break;
-                        case '.':
-                            System.Console.Write('.');
-                            break;
-                        case '+':
-                            System.Console.Write('☻');
-                            break;
-                        case '*':
-                            System.Console.Write('Θ');
-                            break;
-                    }
-
-                }
-                System.Console.WriteLine();
-            }
-
-            RequiresRedraw = false;
+            return null;
         }
-        private static Point GetPlayerPosition()
-        {
-            for (var y = 0; y < YSize; y++)
-            {
-                for (var x = 0; x < XSize; x++)
-                {
-                    var spot = GetSpot(new Point(y, x));
-                    if (ContainsPlayer(spot))
-                    {
-                        return new Point(y, x);
-                    }
-                }
-            }
-
-            return new Point(-1, -1);
-        }
-
-        private static char GetSpot(Point p)
-        {
-            if (p.X < 0 || p.X >= XSize || p.Y < 0 || p.Y >= YSize)
-            {
-                return 'E';
-            }
-
-            return Map[p.Y, p.X];
-        }
-
-        private static void Main(string[] args)
-        {
-            Map = LoadMap(@"C:\IronYard\sokoban_levels.txt", 0, out YSize, out XSize);
-
-            while (true)
-            {
-                RenderWorld();
-                RespondToUserInput();
-                if (CheckForWin())
-                {
-                    RenderWorld();
-                    System.Console.WriteLine("YOU WIN !!!!!!!");
-                    break;
-                }
-
-            }
-
-            System.Console.ReadLine();
-
-        }
-
-        private static char[,] LoadMap(string fileName, int mapNumber, out int ySize, out int xSize)
-        {
-
-            List<char[,]> maps = new List<char[,]>();
-            string[] rows = File.ReadAllLines(fileName);
-
-            List<char[]> currentMapRows = new List<char[]>();
-            foreach (var row in rows)
-            {
-
-                if (string.IsNullOrWhiteSpace(row))
-                {
-                    xSize = currentMapRows.Max(x => x.Length);
-                    ySize = currentMapRows.Count;
-
-                    var currentMap = new char[ySize, xSize];
-                    for (int i = 0; i < currentMapRows.Count; i++)
-                    {
-                        for (int j = 0; j < currentMapRows[i].Length; j++)
-                        {
-                            currentMap[i, j] = currentMapRows[i][j];
-                        }
-                    }
-
-                    maps.Add(currentMap);
-
-                    currentMapRows = new List<char[]>();
-                }
-                else
-                {
-                    currentMapRows.Add(row.ToCharArray());
-                }
-
-            }
-
-            var loadMap = maps[mapNumber];
-
-            ySize = loadMap.GetLength(0);
-            xSize = loadMap.GetLength(1);
-
-            return loadMap;
-
-        }
-
-        private static void RespondToUserInput()
-        {
-            var keyPressed = System.Console.ReadKey(true);
-            switch (keyPressed.Key)
-            {
-                case ConsoleKey.LeftArrow:
-                case ConsoleKey.UpArrow:
-                case ConsoleKey.RightArrow:
-                case ConsoleKey.DownArrow:
-                    MoveBarrelOrPlayer(keyPressed.Key, GetPlayerPosition(), true);
-                    break;
-            }
-        }
-
-        private static void MoveBarrelOrPlayer(ConsoleKey key, Point point, bool isPlayer)
-        {
-            var newPosition = GetNewPosition(key, point);
-            if (IsValidMove(key, newPosition, isPlayer))
-            {
-                UpdateOldAndNewSpots(point, newPosition, isPlayer);
-                RequiresRedraw = true;
-            }
-        }
-
-        private static void UpdateOldAndNewSpots(Point oldPoint, Point newPoint, bool isPlayer)
-        {
-            var oldSpot = GetSpot(oldPoint);
-            var newSpot = GetSpot(newPoint);
-
-            switch (oldSpot)
-            {
-                case '@':
-                case 'o':
-                    Map[oldPoint.Y, oldPoint.X] = ' ';
-                    break;
-                case '+':
-                case '.':
-                case '*':
-                    Map[oldPoint.Y, oldPoint.X] = '.';
-                    break;
-            }
-
-
-            switch (newSpot)
-            {
-                case ' ':
-                    Map[newPoint.Y, newPoint.X] = isPlayer ? '@' : 'o';
-                    break;
-                case '.':
-                    Map[newPoint.Y, newPoint.X] = isPlayer ? '+' : '*';
-                    break;
-            }
-
-        }
-
-        private static Point GetNewPosition(ConsoleKey key, Point newPoint)
-        {
-            var position = new Point(newPoint.Y, newPoint.X);
-            switch (key)
-            {
-                case ConsoleKey.LeftArrow:
-                    position.X -= 1;
-                    break;
-                case ConsoleKey.UpArrow:
-                    position.Y -= 1;
-                    break;
-                case ConsoleKey.RightArrow:
-                    position.X += 1;
-                    break;
-                case ConsoleKey.DownArrow:
-                    position.Y += 1;
-                    break;
-            }
-
-            return position;
-        }
-
-        private static bool IsValidMove(ConsoleKey keyPressed, Point newPoint, bool isPlayer)
-        {
-            var spot = GetSpot(newPoint);
-
-            if (spot == 'E')
-                return false;
-
-            if (IsWall(spot))
-                return false;
-
-            if (IsEmptySpot(spot))
-                return true;
-
-            if (ContainsBarrel(spot))
-            {
-                if (!isPlayer)
-                    return false;
-
-                var newBarrelPosition = GetNewPosition(keyPressed, newPoint);
-                if (IsValidMove(keyPressed, newBarrelPosition, false)) //can barrel move here?
-                {
-                    MoveBarrelOrPlayer(keyPressed, newPoint, false);
-                    return true;
-                }
-            }
-
-            return false;
-        }
-
-        private static bool IsWall(char spot)
-        {
-            return spot == '#';
-        }
-
-        private static bool IsEmptySpot(char spot)
-        {
-            return spot == ' ' || spot == '.';
-        }
-
-        private static bool ContainsBarrel(char spot)
-        {
-            return spot == 'o' || spot == '*';
-        }
-
-        private static bool ContainsPlayer(char spot)
-        {
-            return spot == '@' || spot == '+';
-        }
-
-
-    }
-
-    public class Point
-    {
-        public Point(int y, int x)
-        {
-            Y = y;
-            X = x;
-        }
-
-        public int Y { get; set; }
-        public int X { get; set; }
     }
 }
